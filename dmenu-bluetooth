@@ -7,7 +7,7 @@
 #
 # Author: Nick Clyde (clydedroid)
 # dmenu support by: Layerex
-# Original script: https://github.com/nickclyde/rofi-bluetooth
+# Original script: [https://github.com/nickclyde/rofi-bluetooth](https://github.com/nickclyde/rofi-bluetooth)
 #
 # A script that generates a dmenu menu that uses bluetoothctl to
 # connect to bluetooth devices and display status info.
@@ -19,10 +19,14 @@
 #   Arch repositories: dmenu, bluez-utils (contains bluetoothctl)
 
 # Constants
-divider="---------"
+divider="──────────────────"
 goback="Back"
 exit="Exit"
-connected_icon=""
+connected_icon="<o>"
+# Auto-accept pairing
+bluetoothctl agent KeyboardDisplay  # or NoInputNoOutput for headless
+bluetoothctl default-agent
+
 
 # Checks if bluetooth controller is powered on
 power_on() {
@@ -50,10 +54,10 @@ toggle_power() {
 # Checks if controller is scanning for new devices
 scan_on() {
     if bluetoothctl show | grep -F -q "Discovering: yes"; then
-        echo "Scan: on"
+        echo "Refresh"
         return 0
     else
-        echo "Scan: off"
+        echo "Refresh"
         return 1
     fi
 }
@@ -65,9 +69,8 @@ toggle_scan() {
         bluetoothctl scan off
         show_menu
     else
-        bluetoothctl scan on &
-        echo "Scanning..."
-        sleep 5
+        bluetoothctl --timeout 3 scan on
+        echo "Scanning 3s..."
         show_menu
     fi
 }
@@ -75,10 +78,10 @@ toggle_scan() {
 # Checks if controller is able to pair to devices
 pairable_on() {
     if bluetoothctl show | grep -F -q "Pairable: yes"; then
-        echo "Pairable: on"
+        echo "Pairable: ON"
         return 0
     else
-        echo "Pairable: off"
+        echo "Pairable: OFF"
         return 1
     fi
 }
@@ -97,10 +100,10 @@ toggle_pairable() {
 # Checks if controller is discoverable by other devices
 discoverable_on() {
     if bluetoothctl show | grep -F -q "Discoverable: yes"; then
-        echo "Discoverable: on"
+        echo "Discoverable: ON"
         return 0
     else
-        echo "Discoverable: off"
+        echo "Discoverable: OFF"
         return 1
     fi
 }
@@ -139,10 +142,10 @@ toggle_connection() {
 # Checks if a device is paired
 device_paired() {
     if bluetoothctl info "$1" | grep -F -q "Paired: yes"; then
-        echo "Paired: yes"
+        echo "Unpair Device "
         return 0
     else
-        echo "Paired: no"
+        echo "Pair Device"
         return 1
     fi
 }
@@ -161,10 +164,10 @@ toggle_paired() {
 # Checks if a device is trusted
 device_trusted() {
     if bluetoothctl info "$1" | grep -F -q "Trusted: yes"; then
-        echo "Trusted: yes"
+        echo "Trusted: YES"
         return 0
     else
-        echo "Trusted: no"
+        echo "Trusted: NO"
         return 1
     fi
 }
@@ -215,16 +218,25 @@ device_menu() {
     # Get device name and mac address
     device_name="$(echo "$device" | cut -d ' ' -f 3-)"
     mac="$(echo "$device" | cut -d ' ' -f 2)"
+    opt=""
 
     # Build options
     if device_connected "$mac"; then
-        connected="Connected: yes"
+        connected="Disconnect Device"
     else
-        connected="Connected: no"
+        connected="Connect Device"
     fi
+    opt=""
     paired="$(device_paired "$mac")"
     trusted="$(device_trusted "$mac")"
-    options="$connected\n$paired\n$trusted\n$divider\n$goback\n$exit"
+
+    if device_paired "$mac"; then
+      opt="$connected\n$paired"
+    else
+      opt=$paired
+    fi
+
+    options="$device_name\n$divider\n$opt\n$divider\n$goback\n$exit"
 
     # Open dmenu menu, read chosen option
     chosen="$(echo -e "$options" | run_dmenu "$device_name")"
@@ -239,6 +251,7 @@ device_menu() {
             ;;
         "$paired")
             toggle_paired "$mac"
+            toggle_trust "$mac"
             ;;
         "$trusted")
             toggle_trust "$mac"
@@ -251,9 +264,11 @@ device_menu() {
 
 # Opens a dmenu menu with current bluetooth status and options to connect
 show_menu() {
+
+  saved_devices="Saved Devices\n$divider"
     # Get menu options
     if power_on; then
-        power="Power: on"
+        power="Bluetooth: ON"
 
         # Human-readable names of devices, one per line
         # If scan is off, will only list paired devices
@@ -279,11 +294,11 @@ show_menu() {
         discoverable="$(discoverable_on)"
 
         # Options passed to dmenu
-        [[ -n $devices ]] && devices_part="$devices\n$divider\n"
-        options="$devices_part$power\n$scan\n$pairable\n$discoverable\n$exit"
+        [[ -n $devices ]] && devices_part="$divider\n$devices\n$divider\n"
+        options="$power\n$devices_part$scan\n$pairable\n$discoverable\n$divider\n$exit"
     else
-        power="Power: off"
-        options="$power\n$exit"
+        power="Bluetooth: OFF"
+        options="$power\n$divider\n$exit"
     fi
 
     # Open dmenu menu, read chosen option
@@ -326,7 +341,7 @@ run_dmenu() {
             DMENU_BLUETOOTH_LAUNCHER="rofi -dmenu"
             ;;
         fuzzel)
-            DMENU_BLUETOOTH_LAUNCHER="fuzzel --dmenu"
+            DMENU_BLUETOOTH_LAUNCHER="fuzzel --dmenu --layer=overlay --grab"
             ;;
     esac
     $DMENU_BLUETOOTH_LAUNCHER -i -p "$DMENU_BLUETOOTH_PROMPT" "${dmenu_args[@]}"
