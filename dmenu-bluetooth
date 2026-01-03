@@ -23,9 +23,13 @@ divider="──────────────────"
 goback="Back"
 exit="Exit"
 connected_icon="<o>"
-# Auto-accept pairing
-bluetoothctl agent KeyboardDisplay  # or NoInputNoOutput for headless
-bluetoothctl default-agent
+
+bluetoothctl << EOF
+agent KeyboardDisplay
+default-agent
+exit
+EOF
+
 
 
 # Checks if bluetooth controller is powered on
@@ -152,22 +156,30 @@ device_paired() {
 
 # Toggles device paired state
 toggle_paired() {
-    if device_paired "$1"; then
-        bluetoothctl remove "$1"
-        device_menu "$device"
+    mac="$1"
+    if device_paired "$mac"; then
+        bluetoothctl remove "$mac"
+        sleep 1
     else
-        bluetoothctl pair "$1"
-        device_menu "$device"
+        bluetoothctl << EOF
+        agent KeyboardDisplay
+        default-agent
+        pair $mac
+        trust $mac
+EOF
+        sleep 2  # Allow bonding
     fi
+    # toggle_trust "$mac"
+    device_menu "$mac"
 }
 
 # Checks if a device is trusted
 device_trusted() {
     if bluetoothctl info "$1" | grep -F -q "Trusted: yes"; then
-        echo "Trusted: YES"
+        echo "Untrust Device"
         return 0
     else
-        echo "Trusted: NO"
+        echo "Trust Device"
         return 1
     fi
 }
@@ -235,6 +247,12 @@ device_menu() {
     else
       opt=$paired
     fi
+    
+    if device_trusted "$mac"; then
+      opt+="\n$trusted"
+    else
+      opt+=""
+    fi
 
     options="$device_name\n$divider\n$opt\n$divider\n$goback\n$exit"
 
@@ -250,8 +268,7 @@ device_menu() {
             toggle_connection "$mac"
             ;;
         "$paired")
-            toggle_paired "$mac"
-            toggle_trust "$mac"
+            toggle_paired "$mac"           
             ;;
         "$trusted")
             toggle_trust "$mac"
