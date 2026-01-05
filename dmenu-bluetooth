@@ -5,10 +5,9 @@
 # | (_| | | | | | |  __/ | | | |_| |_____| |_) | | |_| |  __/ || (_) | (_) | |_ | | | |
 #  \__,_|_| |_| |_|\___|_| |_|\__,_|     |_.__/|_|\__,_|\___|\__\___/ \___/ \__||_| |_|
 #
-# Author: Nick Clyde (clydedroid)
-# dmenu support by: Layerex
-# Original script: [https://github.com/nickclyde/rofi-bluetooth](https://github.com/nickclyde/rofi-bluetooth)
-#
+# Original: Nick Clyde (https://github.com/nickclyde/rofi-bluetooth)
+# dmenu support: Layerex (https://github.com/Layerex/dmenu-bluetooth) 
+# Configured UI + Additional Bluetooth Support MellowMancer (https://github.com/MellowMancer/dmenu-bluetoothctl)
 # A script that generates a dmenu menu that uses bluetoothctl to
 # connect to bluetooth devices and display status info.
 #
@@ -22,8 +21,10 @@
 divider="──────────────────"
 goback="Back"
 exit="Exit"
-connected_icon="<o>"
+connected_suffix="▻"
+connected_prefix="◅"
 
+# Initialise agent to prevent pairing issues later
 echo -e "agent off\nagent on\ndefault-agent\nquit" | bluetoothctl
 
 
@@ -141,10 +142,10 @@ toggle_connection() {
 # Checks if a device is paired
 device_paired() {
     if bluetoothctl info "$1" | grep -F -q "Paired: yes"; then
-        echo "Unpair Device "
+        echo "Paired:             ◉ YES"
         return 0
     else
-        echo "Pair Device"
+        echo "Paired:             ○ NO"
         return 1
     fi
 }
@@ -174,10 +175,10 @@ toggle_paired() {
 # Checks if a device is trusted
 device_trusted() {
     if bluetoothctl info "$1" | grep -F -q "Trusted: yes"; then
-        echo "Untrust Device"
+        echo "Trusted:            ◉ YES"
         return 0
     else
-        echo "Trust Device"
+        echo "Trusted:            ○ NO"
         return 1
     fi
 }
@@ -232,9 +233,9 @@ device_menu() {
 
     # Build options
     if device_connected "$mac"; then
-        connected="Disconnect Device"
+        connected="Connected:          ◉ YES"
     else
-        connected="Connect Device"
+        connected="Connected:          ○ NO"
     fi
     opt=""
     paired="$(device_paired "$mac")"
@@ -245,14 +246,8 @@ device_menu() {
     else
       opt=$paired
     fi
-    
-    if device_trusted "$mac"; then
-      opt+="\n$trusted"
-    else
-      opt+=""
-    fi
 
-    options="$device_name\n$divider\n$opt\n$divider\n$goback\n$exit"
+    options="$device_name\n$divider\n$opt\n$trusted\n$divider\n$goback\n$exit"
 
     # Open dmenu menu, read chosen option
     chosen="$(echo -e "$options" | run_dmenu "$device_name")"
@@ -279,36 +274,31 @@ device_menu() {
 
 # Opens a dmenu menu with current bluetooth status and options to connect
 show_menu() {
-
-  saved_devices="Saved Devices\n$divider"
-    # Get menu options
+    saved_devices="Saved Devices\n$divider"
+    
     if power_on; then
         power="Bluetooth            ◉ ON"
 
-        # Human-readable names of devices, one per line
-        # If scan is off, will only list paired devices
-        if [[ -n "$connected_icon" ]]; then
+        # Device list with connected prefix/suffix
+        if [[ -n "$connected_prefix" || -n "$connected_suffix" ]]; then
             devices="$(bluetoothctl devices | grep -F Device | while read -r device; do
                 device_name="$(echo "$device" | cut -d ' ' -f 3-)"
                 mac="$(echo "$device" | cut -d ' ' -f 2)"
-                icon=""
-
-                if device_connected "$mac" && [[ -n $connected_icon ]]; then
-                    icon=" $connected_icon"
+                
+                if device_connected "$mac"; then
+                    prefix="${connected_prefix:-}"
+                    suffix="${connected_suffix:-}"
                 fi
-
-                echo "$device_name${icon}"
+                echo "${prefix:- }${device_name}${suffix:-}"
             done)"
         else
             devices="$(bluetoothctl devices | grep -F Device | cut -d ' ' -f 3-)"
         fi
 
-        # Get controller flags
         scan="$(scan_on)"
         pairable="$(pairable_on)"
         discoverable="$(discoverable_on)"
 
-        # Options passed to dmenu
         [[ -n $devices ]] && devices_part="$divider\n$devices\n$divider\n"
         options="$power\n$devices_part$scan\n$pairable\n$discoverable\n\n$exit"
     else
@@ -316,10 +306,8 @@ show_menu() {
         options="$power\n$divider\n$exit"
     fi
 
-    # Open dmenu menu, read chosen option
     chosen="$(echo -e "$options" | run_dmenu "Bluetooth")"
 
-    # Match chosen option to command
     case $chosen in
         "" | "$divider")
             echo "No option chosen."
@@ -337,12 +325,14 @@ show_menu() {
             toggle_pairable
             ;;
         *)
-            if [[ -n "$connected_icon" ]]; then
-                chosen="${chosen%% ${connected_icon}}"
-            fi
+            # Strip prefix/suffix for matching
+            chosen="${chosen##${connected_prefix:- }}"
+            chosen="${chosen%%"${connected_suffix:-}"}"
+
             device="$(bluetoothctl devices | grep -F "$chosen")"
-            # Open a submenu if a device is selected
-            if [[ -n "$device" ]]; then device_menu "$device"; fi
+            if [[ -n "$device" ]]; then 
+                device_menu "$device"
+            fi
             ;;
     esac
 }
