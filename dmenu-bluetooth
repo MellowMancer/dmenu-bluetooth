@@ -24,11 +24,7 @@ goback="Back"
 exit="Exit"
 connected_icon="<o>"
 
-bluetoothctl << EOF
-agent KeyboardDisplay
-default-agent
-exit
-EOF
+echo -e "agent off\nagent on\ndefault-agent\nquit" | bluetoothctl
 
 
 
@@ -74,7 +70,6 @@ toggle_scan() {
         show_menu
     else
         bluetoothctl --timeout 3 scan on
-        echo "Scanning 3s..."
         show_menu
     fi
 }
@@ -82,10 +77,10 @@ toggle_scan() {
 # Checks if controller is able to pair to devices
 pairable_on() {
     if bluetoothctl show | grep -F -q "Pairable: yes"; then
-        echo "Pairable: ON"
+        echo "Pairable            ◉ ON"
         return 0
     else
-        echo "Pairable: OFF"
+        echo "Pairable            ○ OFF"
         return 1
     fi
 }
@@ -104,10 +99,10 @@ toggle_pairable() {
 # Checks if controller is discoverable by other devices
 discoverable_on() {
     if bluetoothctl show | grep -F -q "Discoverable: yes"; then
-        echo "Discoverable: ON"
+        echo "Discoverable        ◉ ON"
         return 0
     else
-        echo "Discoverable: OFF"
+        echo "Discoverable        ○ OFF"
         return 1
     fi
 }
@@ -155,23 +150,26 @@ device_paired() {
 }
 
 # Toggles device paired state
+
 toggle_paired() {
     mac="$1"
     if device_paired "$mac"; then
         bluetoothctl remove "$mac"
-        sleep 1
     else
-        bluetoothctl << EOF
-        agent KeyboardDisplay
-        default-agent
-        pair $mac
-        trust $mac
-EOF
-        sleep 2  # Allow bonding
+        echo -e "pair $mac" | bluetoothctl --timeout 8
+        for i in {1..5}; do
+          if device_paired "$mac"; then
+              bluetoothctl trust "$mac"
+              break
+          else
+              echo "Failed; run interactively: bluetoothctl pair $mac"
+              sleep 1
+          fi
+        done 
     fi
-    # toggle_trust "$mac"
     device_menu "$mac"
 }
+
 
 # Checks if a device is trusted
 device_trusted() {
@@ -285,7 +283,7 @@ show_menu() {
   saved_devices="Saved Devices\n$divider"
     # Get menu options
     if power_on; then
-        power="Bluetooth: ON"
+        power="Bluetooth            ◉ ON"
 
         # Human-readable names of devices, one per line
         # If scan is off, will only list paired devices
@@ -312,9 +310,9 @@ show_menu() {
 
         # Options passed to dmenu
         [[ -n $devices ]] && devices_part="$divider\n$devices\n$divider\n"
-        options="$power\n$devices_part$scan\n$pairable\n$discoverable\n$divider\n$exit"
+        options="$power\n$devices_part$scan\n$pairable\n$discoverable\n\n$exit"
     else
-        power="Bluetooth: OFF"
+        power="Bluetooth            ○OFF"
         options="$power\n$divider\n$exit"
     fi
 
