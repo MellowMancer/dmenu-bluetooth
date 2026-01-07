@@ -21,13 +21,34 @@
 divider="──────────────────"
 goback="Back"
 exit="Exit"
-connected_suffix="▻"
-connected_prefix="◅"
+connected_suffix="    "
+connected_prefix=""
+ENABLED=" ON"
+DISABLED=" OFF"
 
 # Initialise agent to prevent pairing issues later
 echo -e "agent off\nagent on\ndefault-agent\nquit" | bluetoothctl
 
+# Store PID for process identification later on
+LAUNCHER_APP_ID="/tmp/launcher_app_id.pid"
+DMENU_BLUETOOTH_LAUNCHER="${DMENU_BLUETOOTH_LAUNCHER:-dmenu}"
 
+kill_launcher() {
+    same=true
+    if [[ -f "$LAUNCHER_APP_ID" && "$(cat "$LAUNCHER_APP_ID")" == "dmenu-bluetooth" ]]; then
+        same=true
+        rm -f "$LAUNCHER_APP_ID"
+    else
+        same=false
+    fi
+    if pgrep -x $1 >/dev/null 2>&1; then
+        killall "$1" 2>/dev/null || true
+        # sleep 0.05
+    fi
+    echo ${same}
+}
+
+kill_launcher $DMENU_BLUETOOTH_LAUNCHER
 
 # Checks if bluetooth controller is powered on
 power_on() {
@@ -78,10 +99,10 @@ toggle_scan() {
 # Checks if controller is able to pair to devices
 pairable_on() {
     if bluetoothctl show | grep -F -q "Pairable: yes"; then
-        echo "Pairable            ◉ ON"
+        echo "Pairable            ${ENABLED}"
         return 0
     else
-        echo "Pairable            ○ OFF"
+        echo "Pairable            ${DISABLED}"
         return 1
     fi
 }
@@ -100,10 +121,10 @@ toggle_pairable() {
 # Checks if controller is discoverable by other devices
 discoverable_on() {
     if bluetoothctl show | grep -F -q "Discoverable: yes"; then
-        echo "Discoverable        ◉ ON"
+        echo "Discoverable        ${ENABLED}"
         return 0
     else
-        echo "Discoverable        ○ OFF"
+        echo "Discoverable        ${DISABLED}"
         return 1
     fi
 }
@@ -142,10 +163,10 @@ toggle_connection() {
 # Checks if a device is paired
 device_paired() {
     if bluetoothctl info "$1" | grep -F -q "Paired: yes"; then
-        echo "Paired:             ◉ YES"
+        echo "Paired:             ${ENABLED}"
         return 0
     else
-        echo "Paired:             ○ NO"
+        echo "Paired:             ${DISABLED}"
         return 1
     fi
 }
@@ -175,10 +196,10 @@ toggle_paired() {
 # Checks if a device is trusted
 device_trusted() {
     if bluetoothctl info "$1" | grep -F -q "Trusted: yes"; then
-        echo "Trusted:            ◉ YES"
+        echo "Trusted:            ${ENABLED}"
         return 0
     else
-        echo "Trusted:            ○ NO"
+        echo "Trusted:            ${DISABLED}"
         return 1
     fi
 }
@@ -233,9 +254,9 @@ device_menu() {
 
     # Build options
     if device_connected "$mac"; then
-        connected="Connected:          ◉ YES"
+        connected="Connected:          ${ENABLED}"
     else
-        connected="Connected:          ○ NO"
+        connected="Connected:          ${DISABLED}"
     fi
     opt=""
     paired="$(device_paired "$mac")"
@@ -277,7 +298,7 @@ show_menu() {
     saved_devices="Saved Devices\n$divider"
     
     if power_on; then
-        power="Bluetooth            ◉ ON"
+        power="Bluetooth            ${ENABLED}"
 
         # Device list with connected prefix/suffix
         if [[ -n "$connected_prefix" || -n "$connected_suffix" ]]; then
@@ -302,7 +323,7 @@ show_menu() {
         [[ -n $devices ]] && devices_part="$divider\n$devices\n$divider\n"
         options="$power\n$devices_part$scan\n$pairable\n$discoverable\n\n$exit"
     else
-        power="Bluetooth            ○OFF"
+        power="Bluetooth            ${DISABLED}"
         options="$power\n$divider\n$exit"
     fi
 
@@ -337,19 +358,22 @@ show_menu() {
     esac
 }
 
+
+
 # dmenu command to pipe into. Extra arguments to dmenu-bluetooth are passed through to dmenu. This
 # allows the user to set fonts, sizes, colours, etc.
-DMENU_BLUETOOTH_LAUNCHER="${DMENU_BLUETOOTH_LAUNCHER:-dmenu}"
-run_dmenu() {
+
+run_dmenu() { 
     case "$DMENU_BLUETOOTH_LAUNCHER" in
         rofi)
             DMENU_BLUETOOTH_LAUNCHER="rofi -dmenu"
             ;;
         fuzzel)
-            DMENU_BLUETOOTH_LAUNCHER="fuzzel --dmenu --layer=overlay --grab"
+            DMENU_BLUETOOTH_LAUNCHER="fuzzel --dmenu --layer=overlay --anchor=top-right --x-margin=20 --y-margin=15 --placeholder=Search"
             ;;
     esac
-    $DMENU_BLUETOOTH_LAUNCHER -i -p "$DMENU_BLUETOOTH_PROMPT" "${dmenu_args[@]}"
+    $DMENU_BLUETOOTH_LAUNCHER -i "${dmenu_args[@]}" &
+    echo "dmenu-bluetooth" > $LAUNCHER_APP_ID
 }
 
 print_help() {
@@ -429,4 +453,8 @@ case "${dmenu_args[0]}" in
         ;;
 esac
 
-show_menu
+if [[ "$same" == "true" ]]; then
+  exit 0
+else
+  show_menu
+fi
